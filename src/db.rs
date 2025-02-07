@@ -1,19 +1,23 @@
 use anyhow::Result;
 use sqlx::postgres::{PgPool, PgPoolOptions};
+use chrono::{DateTime, Utc};
 use crate::grpc_client::proto;
 
+/// Database handler for storing and retrieving blocks
 pub struct Database {
     pool: PgPool,
 }
 
 impl Database {
+    /// Creates a new database connection and initializes the schema
     pub async fn connect(database_url: &str) -> Result<Self> {
+        // Create connection pool
         let pool = PgPoolOptions::new()
             .max_connections(5)
             .connect(database_url)
             .await?;
 
-        // Create tables if they don't exist
+        // Create blocks table if it doesn't exist
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS blocks (
@@ -31,7 +35,13 @@ impl Database {
         Ok(Self { pool })
     }
 
+    /// Stores a block in the database
     pub async fn store_block(&self, block: &proto::Block) -> Result<()> {
+        let timestamp = block.timestamp.as_ref()
+            .map(|ts| DateTime::from_timestamp(ts.seconds, ts.nanos as u32))
+            .flatten()
+            .unwrap_or_else(|| Utc::now());
+
         sqlx::query(
             r#"
             INSERT INTO blocks (height, hash, timestamp, num_transactions, data)
@@ -42,7 +52,7 @@ impl Database {
         )
             .bind(block.height as i64)
             .bind(hex::encode(&block.hash))
-            .bind(block.timestamp.as_ref().map(|t| t.clone().into()))
+            .bind(timestamp)
             .bind(block.transactions.len() as i32)
             .bind(serde_json::to_value(block)?)
             .execute(&self.pool)
@@ -51,9 +61,9 @@ impl Database {
         Ok(())
     }
 
+    /// Gets the latest blocks from the database
     pub async fn get_latest_blocks(&self, limit: i64) -> Result<Vec<serde_json::Value>> {
-        let blocks = sqlx::query_as!(
-            BlockRow,
+        let blocks = sqlx::query!(
             r#"
             SELECT data as "data!: serde_json::Value"
             FROM blocks
@@ -67,8 +77,4 @@ impl Database {
 
         Ok(blocks.into_iter().map(|b| b.data).collect())
     }
-}
-
-struct BlockRow {
-    data: serde_json::Value,
 }

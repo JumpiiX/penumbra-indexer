@@ -1,0 +1,25 @@
+syntax = "proto3";
+package penumbra.core.component.compact_block.v1;
+
+message CompactBlock {
+    uint64 height = 1;
+    bytes block_root = 4;
+    bytes epoch_root = 5;
+    bool proposal_started = 6;
+    bool app_parameters_updated = 9;
+    uint64 epoch_index = 11;
+}
+
+service QueryService {
+    rpc CompactBlockRange(CompactBlockRangeRequest) returns (stream CompactBlockRangeResponse);
+}
+
+message CompactBlockRangeRequest {
+    uint64 start_height = 2;
+    uint64 end_height = 3;
+    bool keep_alive = 4;
+}
+
+message CompactBlockRangeResponse {
+    CompactBlock compact_block = 1;
+}

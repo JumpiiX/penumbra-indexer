@@ -1,51 +1,126 @@
+/*
+ * Database operations module for the Penumbra indexer.
+ *
+ * This module handles:
+ * - Database initialization
+ * - Block storage and retrieval
+ * - Automatic cleanup of old blocks
+ *
+ * @version 1.0
+ */
+
 use sqlx::{Pool, Postgres};
 use crate::models::StoredBlock;
 
+/* Maximum number of blocks to keep in the database */
+const MAX_BLOCKS: i32 = 10;
+
+/* Maximum number of database connections */
+const MAX_DB_CONNECTIONS: u32 = 5;
+
+/*
+ * SQL for creating the blocks table.
+ * Defines the schema for storing blockchain data.
+ */
+const CREATE_TABLE_SQL: &str = r#"
+    CREATE TABLE IF NOT EXISTS blocks (
+        height BIGINT PRIMARY KEY,
+        time TIMESTAMP WITH TIME ZONE NOT NULL,
+        hash TEXT NOT NULL,
+        proposer_address TEXT NOT NULL,
+        tx_count INTEGER NOT NULL,
+        previous_block_hash TEXT,
+        data JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+"#;
+
+/*
+ * SQL for inserting or updating a block.
+ * Uses upsert (ON CONFLICT) to handle duplicates.
+ */
+const UPSERT_BLOCK_SQL: &str = r#"
+    INSERT INTO blocks (
+        height, time, hash, proposer_address,
+        tx_count, previous_block_hash, data, created_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    ON CONFLICT (height) DO UPDATE
+    SET time = EXCLUDED.time,
+        hash = EXCLUDED.hash,
+        proposer_address = EXCLUDED.proposer_address,
+        tx_count = EXCLUDED.tx_count,
+        previous_block_hash = EXCLUDED.previous_block_hash,
+        data = EXCLUDED.data,
+        created_at = EXCLUDED.created_at
+"#;
+
+/*
+ * SQL for cleaning up old blocks.
+ * Keeps only the latest blocks based on MAX_BLOCKS.
+ */
+const CLEANUP_BLOCKS_SQL: &str = r#"
+    DELETE FROM blocks
+    WHERE height NOT IN (
+        SELECT height FROM blocks
+        ORDER BY height DESC
+        LIMIT $1
+    )
+"#;
+
+/*
+ * SQL for retrieving the latest blocks.
+ * Orders by height descending and limits the result.
+ */
+const GET_LATEST_BLOCKS_SQL: &str = r#"
+    SELECT * FROM blocks
+    ORDER BY height DESC
+    LIMIT $1
+"#;
+
+/*
+ * Initializes the database connection and schema.
+ *
+ * Sets up the PostgreSQL connection pool and creates the necessary tables
+ * if they don't exist.
+ *
+ * @param database_url Connection string for the PostgreSQL database
+ * @return Pool<Postgres> Database connection pool
+ * @throws sqlx::Error If connection or table creation fails
+ */
 pub async fn init_db(database_url: &str) -> Result<Pool<Postgres>, sqlx::Error> {
     let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(MAX_DB_CONNECTIONS)
         .connect(database_url)
         .await?;
 
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS blocks (
-            height BIGINT PRIMARY KEY,
-            time TIMESTAMP WITH TIME ZONE NOT NULL,
-            hash TEXT NOT NULL,
-            proposer_address TEXT NOT NULL,
-            tx_count INTEGER NOT NULL,
-            previous_block_hash TEXT,
-            data JSONB NOT NULL,
-            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        "#,
-    )
+    // Create tables if they don't exist
+    sqlx::query(CREATE_TABLE_SQL)
         .execute(&pool)
         .await?;
 
     Ok(pool)
 }
 
+/*
+ * Stores a block in the database.
+ *
+ * Performs an upsert operation (insert or update) for the given block
+ * and maintains the maximum number of blocks by cleaning up old ones.
+ *
+ * @param pool Database connection pool
+ * @param block Block data to store
+ * @throws sqlx::Error If database operations fail
+ */
 pub async fn store_block(
     pool: &Pool<Postgres>,
     block: StoredBlock,
 ) -> Result<(), sqlx::Error> {
-    // Insert new block
-    sqlx::query(
-        r#"
-        INSERT INTO blocks (height, time, hash, proposer_address, tx_count, previous_block_hash, data, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (height) DO UPDATE
-        SET time = EXCLUDED.time,
-            hash = EXCLUDED.hash,
-            proposer_address = EXCLUDED.proposer_address,
-            tx_count = EXCLUDED.tx_count,
-            previous_block_hash = EXCLUDED.previous_block_hash,
-            data = EXCLUDED.data,
-            created_at = EXCLUDED.created_at
-        "#,
-    )
+    // Begin transaction
+    let mut tx = pool.begin().await?;
+
+    // Insert or update block
+    sqlx::query(UPSERT_BLOCK_SQL)
         .bind(block.height)
         .bind(block.time)
         .bind(&block.hash)
@@ -54,36 +129,35 @@ pub async fn store_block(
         .bind(&block.previous_block_hash)
         .bind(&block.data)
         .bind(block.created_at)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
-    // Keep only latest 10 blocks
-    sqlx::query(
-        r#"
-        DELETE FROM blocks
-        WHERE height NOT IN (
-            SELECT height FROM blocks
-            ORDER BY height DESC
-            LIMIT 10
-        )
-        "#,
-    )
-        .execute(pool)
+    // Clean up old blocks
+    sqlx::query(CLEANUP_BLOCKS_SQL)
+        .bind(MAX_BLOCKS)
+        .execute(&mut *tx)
         .await?;
+
+    // Commit transaction
+    tx.commit().await?;
 
     Ok(())
 }
 
+/*
+ * Retrieves the latest blocks from the database.
+ *
+ * Returns the most recent blocks ordered by height descending.
+ *
+ * @param pool Database connection pool
+ * @return Vec<StoredBlock> List of latest blocks
+ * @throws sqlx::Error If query fails
+ */
 pub async fn get_latest_blocks(
     pool: &Pool<Postgres>,
 ) -> Result<Vec<StoredBlock>, sqlx::Error> {
-    sqlx::query_as::<_, StoredBlock>(
-        r#"
-        SELECT * FROM blocks
-        ORDER BY height DESC
-        LIMIT 10
-        "#,
-    )
+    sqlx::query_as::<_, StoredBlock>(GET_LATEST_BLOCKS_SQL)
+        .bind(MAX_BLOCKS)
         .fetch_all(pool)
         .await
 }

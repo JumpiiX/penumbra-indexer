@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 fn main() {
-    let proto_dir = PathBuf::from("proto");
+    let _proto_dir = PathBuf::from("proto");  // Added underscore to silence warning
     println!("cargo:rerun-if-changed=proto/");
 
     tonic_build::configure()

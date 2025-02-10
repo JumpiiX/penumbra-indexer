@@ -1,43 +1,21 @@
-mod proto;
 mod client;
 
-use anyhow::Result;
-use crate::client::Client;
+use std::error::Error;
+use client::PenumbraClient;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    // Try different endpoints
-    let endpoints = [
-        "https://penumbra.stakewith.binary.builders:443",
-        "http://penumbra.stakewith.binary.builders:8080",
-        "https://penumbra.stakewith.binary.builders",
-        "http://penumbra.stakewith.binary.builders",
-    ];
+async fn main() -> Result<(), Box<dyn Error>> {
+    let addr = "http://grpc.penumbra.silentvalidator.com:26657";
 
-    let mut connected = false;
-    let mut last_error = None;
+    println!("Connecting to {}", addr);
+    let client = PenumbraClient::connect(addr).await?;
 
-    for endpoint in endpoints {
-        println!("Trying to connect to {}", endpoint);
-        match Client::connect(endpoint).await {
-            Ok(mut client) => {
-                println!("Connected successfully to {}", endpoint);
-                connected = true;
-                client.get_latest_blocks().await?;
-                break;
-            }
-            Err(e) => {
-                println!("Failed to connect to {}: {}", endpoint, e);
-                last_error = Some(e);
-            }
-        }
-    }
+    let current_height = 3456307;
+    let start_height = current_height - 10;
+    let batch_size = 5;
 
-    if !connected {
-        if let Some(e) = last_error {
-            return Err(e);
-        }
-    }
+    println!("Starting block fetching from {} to {}", start_height, current_height);
+    client.fetch_blocks(start_height, current_height, batch_size).await?;
 
     Ok(())
 }

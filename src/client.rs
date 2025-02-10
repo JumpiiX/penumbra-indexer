@@ -1,130 +1,114 @@
-use anyhow::{Result, Context};
-use tonic::{
-    transport::{Channel, ClientTlsConfig},
-    Request, Status,
-};
+use reqwest::Client as HttpClient;
+use serde::Deserialize;
+use std::error::Error;
 use std::time::Duration;
-use crate::proto::penumbra::core::component::compact_block::v1::{
-    query_service_client::QueryServiceClient,
-    CompactBlockRangeRequest,
-    CompactBlock,
-};
 
-pub struct Client {
-    client: QueryServiceClient<Channel>,
-    endpoint: String,
+#[derive(Debug)]
+pub struct PenumbraClient {
+    client: HttpClient,
+    base_url: String,
 }
 
-impl Client {
-    /// Creates a new client with the specified endpoint
-    pub async fn connect(endpoint: &str) -> Result<Self> {
-        println!("Connecting to {}...", endpoint);
+#[derive(Debug, Deserialize)]
+struct BlockResponse {
+    result: BlockResult,
+}
 
-        let channel = Self::create_channel(endpoint).await?;
+#[derive(Debug, Deserialize)]
+struct BlockResult {
+    block: Block,
+}
+
+#[derive(Debug, Deserialize)]
+struct Block {
+    header: BlockHeader,
+    data: BlockData,
+}
+
+#[derive(Debug, Deserialize)]
+struct BlockHeader {
+    height: String,
+    time: String,
+    last_block_id: Option<BlockId>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BlockId {
+    hash: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct BlockData {
+    txs: Option<Vec<String>>,
+}
+
+impl PenumbraClient {
+    pub async fn connect(addr: &str) -> Result<Self, Box<dyn Error>> {
+        println!("Attempting to connect with RPC config...");
+
+        let client = HttpClient::builder()
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(30))
+            .build()?;
+
+        println!("HTTP client created successfully");
 
         Ok(Self {
-            client: QueryServiceClient::new(channel),
-            endpoint: endpoint.to_string(),
+            client,
+            base_url: addr.to_string(),
         })
     }
 
-    /// Creates a channel with proper configuration
-    async fn create_channel(endpoint_url: &str) -> Result<Channel> {
-        let mut config = Channel::from_shared(endpoint_url.to_string())
-            .context("Failed to create channel builder")?
-            .timeout(Duration::from_secs(10))
-            .connect_timeout(Duration::from_secs(10))
-            .concurrency_limit(8)
-            .tcp_keepalive(Some(Duration::from_secs(60)));
-
-        if endpoint_url.starts_with("https://") {
-            config = config.tls_config(ClientTlsConfig::new())?;
-        }
-
-        // Connect
-        let channel = config
-            .connect()
-            .await
-            .context("Failed to connect to endpoint")?;
-
-        Ok(channel)
-    }
-
-    /// Gets a range of blocks with optional streaming
-    pub async fn get_block_range(
-        &mut self,
+    pub async fn fetch_blocks(
+        &self,
         start_height: u64,
         end_height: u64,
-        keep_alive: bool
-    ) -> Result<()> {
-        println!("Fetching blocks from {} to {} (keep_alive: {})",
-                 start_height, end_height, keep_alive);
+        batch_size: u64,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut current_height = start_height;
 
-        let request = Request::new(CompactBlockRangeRequest {
-            start_height,
-            end_height,
-            keep_alive,
-        });
+        while current_height <= end_height {
+            let batch_end = std::cmp::min(current_height + batch_size, end_height);
 
-        let mut stream = self.client
-            .compact_block_range(request)
-            .await
-            .context("Failed to get block range response")?
-            .into_inner();
+            println!("Fetching blocks {} to {}", current_height, batch_end);
 
-        let mut blocks_received = 0;
-        while let Some(response) = stream.message().await? {
-            if let Some(block) = response.compact_block {
-                self.print_block_info(&block);
-                blocks_received += 1;
+            for height in current_height..=batch_end {
+                match self.fetch_block(height).await {
+                    Ok(block) => {
+                        println!("Block {}", height);
+                        println!("  Time: {}", block.result.block.header.time);
+                        if let Some(last_block) = &block.result.block.header.last_block_id {
+                            println!("  Previous block hash: {}", last_block.hash);
+                        }
+                        if let Some(txs) = &block.result.block.data.txs {
+                            println!("  Transaction count: {}", txs.len());
+                        }
+                        println!("-------------------");
+                    }
+                    Err(e) => {
+                        eprintln!("Error fetching block {}: {}", height, e);
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                }
             }
+
+            current_height = batch_end + 1;
         }
 
-        println!("Received {} blocks in total", blocks_received);
         Ok(())
     }
 
-    /// Gets the latest blocks (default: last 10)
-    pub async fn get_latest_blocks(&mut self) -> Result<()> {
-        self.get_block_range(0, 10, false).await
-    }
+    async fn fetch_block(&self, height: u64) -> Result<BlockResponse, Box<dyn Error>> {
+        let url = format!("{}/block?height={}", self.base_url, height);
 
-    /// Stream new blocks as they are created
-    pub async fn stream_new_blocks(&mut self) -> Result<()> {
-        println!("Starting to stream new blocks...");
-        self.get_block_range(0, 0, true).await
-    }
+        let response = self.client
+            .get(&url)
+            .send()
+            .await?
+            .json()
+            .await?;
 
-    /// Prints formatted block information
-    fn print_block_info(&self, block: &CompactBlock) {
-        println!("\n=== Block {} ===", block.height);
-        println!("└─ Block Root: 0x{}", hex::encode(&block.block_root));
-        println!("└─ Epoch Root: 0x{}", hex::encode(&block.epoch_root));
-        println!("└─ Proposal Started: {}", block.proposal_started);
-        println!("└─ App Parameters Updated: {}", block.app_parameters_updated);
-        println!("└─ Epoch Index: {}", block.epoch_index);
-    }
-
-    /// Handles common gRPC errors
-    fn handle_error(&self, status: &Status) -> Result<()> {
-        match status.code() {
-            tonic::Code::Unavailable => {
-                println!("Service unavailable. The node might be down or unreachable.");
-                println!("Endpoint: {}", self.endpoint);
-            }
-            tonic::Code::InvalidArgument => {
-                println!("Invalid argument provided to the request.");
-            }
-            tonic::Code::NotFound => {
-                println!("Requested data not found.");
-            }
-            tonic::Code::Internal => {
-                println!("Internal server error occurred.");
-            }
-            _ => {
-                println!("Unexpected error: {:?}", status);
-            }
-        }
-        Err(anyhow::anyhow!("gRPC error: {}", status))
+        Ok(response)
     }
 }

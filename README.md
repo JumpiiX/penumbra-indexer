@@ -1,60 +1,159 @@
-**High-Level Description of the Real-Time Blockchain Indexer**
+# Penumbra Blockchain Indexer
 
-### **1. Overview**
-With my background in Rust development at Brack and extensive experience with **Tokio**, I have chosen to build a real-time blockchain indexer using Rust's async capabilities. While I initially considered WebSockets—given my familiarity with them—I ultimately decided against it in favor of best practices, ensuring a scalable and efficient architecture using **gRPC**.
+A real-time blockchain indexer for the Penumbra network that collects raw block data and provides an API for querying the latest blocks.
 
-### **2. Core Components**
+## Overview
 
-#### **1. Blockchain Listener (gRPC Client)**
-- Connects to the Penumbra blockchain’s public gRPC node.
-- Listens for new blocks in real-time and retrieves raw block data.
-- Implements **Tokio’s async runtime** for high-performance streaming.
+This application connects to a Penumbra node, continuously synchronizes the latest blocks, stores them in a PostgreSQL database, and provides a REST API for querying the data.
 
-#### **2. Data Processing Layer (Parser & Transformer)**
-- Extracts relevant information from raw block data (block height, timestamp, transactions, block hash).
-- Converts data into a structured format suitable for storage.
-- Handles potential chain reorganizations (forks) to maintain data integrity.
+## Architecture
 
-#### **3. Storage Layer (PostgreSQL Database)**
-- Stores indexed block data in a structured relational database.
-- Uses optimized indexing for fast lookups and query performance.
-- Implements schema migrations to accommodate future changes.
+### Components
 
-#### **4. API Layer (REST/GraphQL)**
-- Exposes a private API for querying indexed data.
-- Supports fetching the latest N blocks with metadata.
-- Implements rate limiting and authentication for security.
+1. **Block Synchronizer**
+    - Connects to Penumbra RPC node
+    - Fetches latest blocks in real-time
+    - Handles reconnection and error recovery
+    - Manages block data validation
 
-#### **5. Caching & Performance Optimization**
-- Uses Redis for caching frequently accessed queries.
-- Implements batch inserts to optimize database writes.
-- Uses database indexing to enhance query performance.
+2. **Database Layer**
+    - PostgreSQL database for block storage
+    - Maintains latest 10 blocks
+    - Automatic cleanup of old blocks
+    - Optimized queries for block retrieval
 
-#### **6. Logging & Monitoring**
-- Logs system activity and errors for debugging.
-- Implements metrics collection (e.g., Prometheus) for system health monitoring.
-- Alerts on failures such as connection loss to the blockchain node.
+3. **API Server**
+    - RESTful endpoints for data access
+    - JSON response format
+    - CORS support for frontend integration
+    - Error handling and status codes
 
-### **3. Technologies & Frameworks**
-- **Rust:** Core programming language for performance and memory safety.
-- **gRPC (`tonic`)**: Enables high-performance blockchain communication.
-- **SQLX (PostgreSQL)**: Provides async database access and structured storage.
-- **Warp or Actix-Web:** Used to build the API for querying indexed data.
-- **Redis (Optional):** Enhances caching for frequently queried data.
-- **Docker & Kubernetes:** Ensures deployment and scalability.
+## Technical Stack
 
-### **4. Workflow**
-1. **Blockchain Listener** receives new blocks via gRPC.
-2. **Data Processing Layer** extracts and transforms relevant data.
-3. **Storage Layer** persists the structured data in PostgreSQL.
-4. **API Layer** serves data to applications for querying.
-5. **Monitoring & Logging** ensure system reliability and debugging capabilities.
+- **Language**: Rust
+- **Database**: PostgreSQL 15
+- **Dependencies**:
+    - `tokio` - Async runtime
+    - `axum` - Web framework
+    - `sqlx` - Database ORM
+    - `reqwest` - HTTP client
+    - `serde` - Serialization
+    - `chrono` - DateTime handling
 
-### **5. Deployment & Scalability**
-- Uses **Docker** for containerization and reproducibility.
-- Deployed on **Kubernetes** for horizontal scaling.
-- Implements **load balancing** for high-availability APIs.
+## Database Schema
 
-### **6. Conclusion**
-Building on my Rust and async programming expertise, I have designed this real-time blockchain indexer for efficiency, scalability, and best-practice architecture. By leveraging **Tokio** and **gRPC**, I ensure reliable real-time data processing while maintaining performance through caching, indexing, and proper database optimization. This system enables fast, reliable access to blockchain transaction data with a structured and maintainable approach.
+```sql
+CREATE TABLE blocks (
+    height BIGINT PRIMARY KEY,
+    time TIMESTAMP WITH TIME ZONE NOT NULL,
+    hash TEXT NOT NULL,
+    proposer_address TEXT NOT NULL,
+    tx_count INTEGER NOT NULL,
+    previous_block_hash TEXT,
+    data JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+```
 
+## API Endpoints
+
+### GET /api/blocks
+Returns the latest 10 blocks from the chain.
+
+**Response Format**:
+```json
+{
+    "blocks": [
+        {
+            "height": number,
+            "time": string (ISO datetime),
+            "hash": string,
+            "proposer_address": string,
+            "tx_count": number,
+            "previous_block_hash": string,
+            "data": object,
+            "created_at": string (ISO datetime)
+        }
+    ],
+    "total_count": number
+}
+```
+
+## Setup & Deployment
+
+### Prerequisites
+- Docker
+- Docker Compose
+
+### Environment Variables
+```env
+DATABASE_URL=postgres://indexer:indexer@db/indexer
+RPC_URL=http://grpc.penumbra.silentvalidator.com:26657
+API_PORT=3000
+```
+
+### Running the Application
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd penumbra-indexer
+```
+
+2. Start the application:
+```bash
+docker compose up --build
+```
+
+The API will be available at `http://localhost:3000/api/blocks`
+
+### Docker Components
+
+1. **Database Container**
+    - PostgreSQL 15
+    - Persistent volume for data storage
+    - Health checks configured
+
+2. **Indexer Container**
+    - Rust application
+    - Automatic reconnection handling
+    - Real-time block synchronization
+
+## Project Structure
+
+```
+src/
+├── main.rs           # Application entry point
+├── client.rs         # Penumbra RPC client
+├── db/
+│   └── mod.rs       # Database operations
+├── api/
+│   ├── mod.rs       # API setup
+│   └── routes.rs    # API endpoints
+└── models/
+    └── mod.rs       # Data structures
+```
+
+## Error Handling
+
+The application implements comprehensive error handling:
+- Database connection errors
+- RPC node connectivity issues
+- Invalid block data
+- API error responses
+
+## Monitoring
+
+The application provides logging for:
+- Block synchronization status
+- Database operations
+- API requests
+- Error conditions
+
+## Future Improvements
+
+1. Add block search functionality
+2. Implement transaction indexing
+3. Add validator statistics
+4. Create metrics endpoint
+5. Add WebSocket support for real-time updates

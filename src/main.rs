@@ -1,3 +1,20 @@
+/*
+* Penumbra Indexer - Main Application Entry Point
+*
+* Coordinates initialization and startup of core services:
+* - Environment configuration
+* - Database connection
+* - API server
+* - Block indexing client
+*
+* Manages concurrent tasks for API and block synchronization
+* using Tokio async runtime.
+*
+* @module main
+* @requires tokio
+* @requires tracing
+* @requires dotenv
+*/
 mod client;
 mod db;
 mod api;
@@ -9,6 +26,20 @@ use dotenv::dotenv;
 use tokio::time::Duration;
 use client::PenumbraClient;
 
+/*
+* Main application entry point.
+*
+* Orchestrates startup sequence:
+* 1. Initialize logging
+* 2. Load configuration
+* 3. Connect to database
+* 4. Start API server
+* 5. Start block indexing process
+*
+* @async
+* @returns {Result} Initialization result
+* @throws {Error} Configuration or service startup failures
+*/
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Initialize logging

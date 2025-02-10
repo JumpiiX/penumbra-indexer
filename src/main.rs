@@ -1,21 +1,88 @@
 mod client;
+mod db;
+mod api;
+mod models;
 
 use std::error::Error;
+use std::env;
+use dotenv::dotenv;
+use tokio::time::Duration;
 use client::PenumbraClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let addr = "http://grpc.penumbra.silentvalidator.com:26657";
+    // Initialize logging
+    tracing_subscriber::fmt::init();
 
-    println!("Connecting to {}", addr);
-    let client = PenumbraClient::connect(addr).await?;
+    println!("Starting Penumbra Indexer...");
 
-    let current_height = 3456307;
-    let start_height = current_height - 10;
-    let batch_size = 5;
+    // Load environment variables
+    dotenv().ok();
+    let database_url = env::var("DATABASE_URL")
+        .expect("DATABASE_URL must be set");
+    let rpc_url = env::var("RPC_URL")
+        .unwrap_or_else(|_| "http://grpc.penumbra.silentvalidator.com:26657".to_string());
+    let api_port = env::var("API_PORT")
+        .unwrap_or_else(|_| "3000".to_string())
+        .parse::<u16>()
+        .expect("API_PORT must be a valid port number");
 
-    println!("Starting block fetching from {} to {}", start_height, current_height);
-    client.fetch_blocks(start_height, current_height, batch_size).await?;
+    println!("Connecting to database at {}", database_url);
+
+    // Wait a bit for the database to be ready
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    // Initialize database
+    let pool = db::init_db(&database_url).await?;
+    println!("Database initialized successfully");
+
+    // Start API server
+    let app = api::create_router(pool.clone());
+    let api_handle = tokio::spawn(async move {
+        let listener = tokio::net::TcpListener::bind(("0.0.0.0", api_port)).await.unwrap();
+        println!("API server listening on port {}", api_port);
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    println!("Starting block indexer...");
+    // Start block indexer
+    let indexer_handle = tokio::spawn({
+        let pool = pool.clone();
+        async move {
+            let client = PenumbraClient::connect(&rpc_url, pool).await.unwrap();
+            println!("Connected to Penumbra node at {}", rpc_url);
+
+            loop {
+                match client.get_status().await {
+                    Ok(status) => {
+                        let current_height: u64 = status.result.sync_info.latest_block_height
+                            .parse()
+                            .unwrap_or(0);
+                        let start_height = if current_height > 10 {
+                            current_height - 10
+                        } else {
+                            0
+                        };
+
+                        println!("Fetching blocks {} to {}", start_height, current_height);
+                        if let Err(e) = client.fetch_blocks(start_height, current_height, 5).await {
+                            eprintln!("Error fetching blocks: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error getting node status: {}", e);
+                    }
+                }
+
+                tokio::time::sleep(Duration::from_secs(6)).await;
+            }
+        }
+    });
+
+    println!("All services started successfully");
+
+    // Wait for both tasks
+    tokio::try_join!(api_handle, indexer_handle)?;
 
     Ok(())
 }

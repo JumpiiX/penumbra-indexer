@@ -1,49 +1,72 @@
 use reqwest::Client as HttpClient;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::time::Duration;
+use chrono::{DateTime, Utc};
+use sqlx::{Pool, Postgres};
+use crate::models::StoredBlock;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PenumbraClient {
     client: HttpClient,
     base_url: String,
+    db_pool: Pool<Postgres>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BlockResponse {
+    pub result: BlockResult,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BlockResult {
+    pub block: Block,
+    pub block_id: BlockId,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Block {
+    pub header: BlockHeader,
+    pub data: BlockData,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BlockHeader {
+    pub height: String,
+    pub time: DateTime<Utc>,
+    pub last_block_id: Option<BlockId>,
+    pub proposer_address: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BlockId {
+    pub hash: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BlockData {
+    pub txs: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
-struct BlockResponse {
-    result: BlockResult,
+pub struct StatusResponse {
+    pub result: NodeStatus,
 }
 
 #[derive(Debug, Deserialize)]
-struct BlockResult {
-    block: Block,
+pub struct NodeStatus {
+    pub sync_info: SyncInfo,
 }
 
 #[derive(Debug, Deserialize)]
-struct Block {
-    header: BlockHeader,
-    data: BlockData,
-}
-
-#[derive(Debug, Deserialize)]
-struct BlockHeader {
-    height: String,
-    time: String,
-    last_block_id: Option<BlockId>,
-}
-
-#[derive(Debug, Deserialize)]
-struct BlockId {
-    hash: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct BlockData {
-    txs: Option<Vec<String>>,
+pub struct SyncInfo {
+    pub latest_block_height: String,
+    pub latest_block_time: DateTime<Utc>,
+    pub catching_up: bool,
 }
 
 impl PenumbraClient {
-    pub async fn connect(addr: &str) -> Result<Self, Box<dyn Error>> {
+    pub async fn connect(addr: &str, pool: Pool<Postgres>) -> Result<Self, Box<dyn Error + Send + Sync>> {
         println!("Attempting to connect with RPC config...");
 
         let client = HttpClient::builder()
@@ -56,7 +79,14 @@ impl PenumbraClient {
         Ok(Self {
             client,
             base_url: addr.to_string(),
+            db_pool: pool,
         })
+    }
+
+    pub async fn get_status(&self) -> Result<StatusResponse, Box<dyn Error + Send + Sync>> {
+        let url = format!("{}/status", self.base_url);
+        let response = self.client.get(&url).send().await?.json().await?;
+        Ok(response)
     }
 
     pub async fn fetch_blocks(
@@ -64,7 +94,7 @@ impl PenumbraClient {
         start_height: u64,
         end_height: u64,
         batch_size: u64,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut current_height = start_height;
 
         while current_height <= end_height {
@@ -84,6 +114,23 @@ impl PenumbraClient {
                             println!("  Transaction count: {}", txs.len());
                         }
                         println!("-------------------");
+
+                        // Store block in database
+                        let result_json = serde_json::to_value(&block.result).unwrap_or_default();
+                        let stored_block = StoredBlock {
+                            height: height as i64,
+                            time: block.result.block.header.time,
+                            hash: block.result.block_id.hash.clone(),
+                            proposer_address: block.result.block.header.proposer_address.clone(),
+                            tx_count: block.result.block.data.txs.map_or(0, |txs| txs.len()) as i32,
+                            previous_block_hash: block.result.block.header.last_block_id.map(|id| id.hash),
+                            data: result_json,
+                            created_at: Utc::now(),
+                        };
+
+                        if let Err(e) = crate::db::store_block(&self.db_pool, stored_block).await {
+                            eprintln!("Error storing block in database: {}", e);
+                        }
                     }
                     Err(e) => {
                         eprintln!("Error fetching block {}: {}", height, e);
@@ -99,16 +146,9 @@ impl PenumbraClient {
         Ok(())
     }
 
-    async fn fetch_block(&self, height: u64) -> Result<BlockResponse, Box<dyn Error>> {
+    async fn fetch_block(&self, height: u64) -> Result<BlockResponse, Box<dyn Error + Send + Sync>> {
         let url = format!("{}/block?height={}", self.base_url, height);
-
-        let response = self.client
-            .get(&url)
-            .send()
-            .await?
-            .json()
-            .await?;
-
+        let response = self.client.get(&url).send().await?.json().await?;
         Ok(response)
     }
 }

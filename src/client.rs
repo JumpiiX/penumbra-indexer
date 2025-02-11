@@ -4,7 +4,7 @@
  * This module provides the main client interface for interacting with the Penumbra blockchain.
  * It handles RPC communication, block fetching, and database storage.
  *
- * @JumpiiX
+ * @jumpiix
  * @version 1.0
  */
 
@@ -137,6 +137,7 @@ pub struct NodeStatus {
  * @property catching_up Whether the node is still catching up
  */
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct SyncInfo {
     pub latest_block_height: String,
     pub latest_block_time: DateTime<Utc>,

@@ -40,6 +40,16 @@ This application connects to a Penumbra node, continuously synchronizes the late
     - `serde` - Serialization
     - `chrono` - DateTime handling
 
+## Why Not gRPC?
+
+Initially, we planned to use gRPC for communication with the Penumbra network. However, we encountered several issues:
+- **Dependency Errors**: Multiple compilation issues with dependencies, even when following the official documentation.
+- **Buf Compatibility**: Despite using `buf` for protobuf compilation, errors persisted, making development slow and unreliable.
+- **Build Complexity**: The additional complexity of managing gRPC dependencies and ensuring cross-platform compatibility introduced unnecessary overhead.
+- **Simplicity & Maintainability**: By using RESTful APIs, we reduce the dependency footprint and make it easier for new developers to contribute to the project without dealing with gRPC-specific configurations.
+
+For these reasons, we opted for a REST API with WebSockets as a future improvement for real-time updates.
+
 ## Database Schema
 
 ```sql
@@ -157,3 +167,4 @@ The application provides logging for:
 3. Add validator statistics
 4. Create metrics endpoint
 5. Add WebSocket support for real-time updates
+

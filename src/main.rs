@@ -23,7 +23,6 @@ mod models;
 use std::error::Error;
 use std::env;
 use dotenv::dotenv;
-use tokio::time::Duration;
 use client::PenumbraClient;
 
 /*
@@ -60,8 +59,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Connecting to database at {}", database_url);
 
-    // Wait a bit for the database to be ready
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    // Wait for the database to be ready
+    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
     // Initialize database
     let pool = db::init_db(&database_url).await?;
@@ -83,29 +82,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let client = PenumbraClient::connect(&rpc_url, pool).await.unwrap();
             println!("Connected to Penumbra node at {}", rpc_url);
 
+            let mut last_processed_block: Option<u64> = None;
+
             loop {
                 match client.get_status().await {
                     Ok(status) => {
-                        let current_height: u64 = status.result.sync_info.latest_block_height
+                        let latest_height: u64 = status.result.sync_info.latest_block_height
                             .parse()
                             .unwrap_or(0);
-                        let start_height = if current_height > 10 {
-                            current_height - 10
-                        } else {
-                            0
-                        };
 
-                        println!("Fetching blocks {} to {}", start_height, current_height);
-                        if let Err(e) = client.fetch_blocks(start_height, current_height, 5).await {
-                            eprintln!("Error fetching blocks: {}", e);
+                        // Only process the block if it hasn't been processed yet
+                        if Some(latest_height) != last_processed_block {
+                            println!("Fetching latest block {}", latest_height);
+                            if let Err(e) = client.fetch_blocks(latest_height, latest_height, 5).await {
+                                eprintln!("Error fetching latest block: {}", e);
+                            }
+                            last_processed_block = Some(latest_height);
                         }
                     }
                     Err(e) => {
                         eprintln!("Error getting node status: {}", e);
                     }
                 }
-
-                tokio::time::sleep(Duration::from_millis(1)).await;
             }
         }
     });

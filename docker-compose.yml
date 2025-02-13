@@ -18,9 +18,9 @@ services:
   indexer:
     build: .
     environment:
-      - DB_URL
-      - RPC_URL
-      - API_PORT
+      - DB_URL=postgres://indexer:indexer@db/indexer
+      - RPC_URL=http://grpc.penumbra.silentvalidator.com:26657
+      - API_PORT=3000
     ports:
       - "3000:3000"
     depends_on:

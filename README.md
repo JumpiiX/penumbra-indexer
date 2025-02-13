@@ -97,7 +97,7 @@ Returns the latest 10 blocks from the chain.
 
 ### Environment Variables
 ```env
-DATABASE_URL=postgres://indexer:indexer@db/indexer
+DB_URL=postgres://indexer:indexer@db/indexer
 RPC_URL=http://grpc.penumbra.silentvalidator.com:26657
 API_PORT=3000
 ```

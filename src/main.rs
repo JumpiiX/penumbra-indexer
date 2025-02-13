@@ -51,12 +51,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     dotenv().ok();
 
     // Use PORT environment variable for Railway compatibility
-    let port = env::var("PORT")
+    let port = env::var("API_PORT")
         .unwrap_or_else(|_| "3000".to_string())
         .parse::<u16>()
         .expect("PORT must be a valid port number");
 
-    let database_url = env::var("DATABASE_URL")
+    let database_url = env::var("DB_URL")
         .expect("DATABASE_URL must be set");
     let rpc_url = env::var("RPC_URL")
         .unwrap_or_else(|_| "http://grpc.penumbra.silentvalidator.com:26657".to_string());

@@ -49,38 +49,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Load environment variables
     dotenv().ok();
-
-    // Use PORT environment variable for Railway compatibility
-    let port = env::var("API_PORT")
-        .unwrap_or_else(|_| "3000".to_string())
-        .parse::<u16>()
-        .expect("PORT must be a valid port number");
-
     let database_url = env::var("DB_URL")
         .expect("DATABASE_URL must be set");
     let rpc_url = env::var("RPC_URL")
         .unwrap_or_else(|_| "http://grpc.penumbra.silentvalidator.com:26657".to_string());
+    let api_port = env::var("API_PORT")
+        .unwrap_or_else(|_| "3000".to_string())
+        .parse::<u16>()
+        .expect("API_PORT must be a valid port number");
 
     println!("Connecting to database at {}", database_url);
 
-    // Retry database connection with backoff
-    let pool = loop {
-        match db::init_db(&database_url).await {
-            Ok(pool) => break pool,
-            Err(e) => {
-                eprintln!("Database connection failed: {}. Retrying in 5 seconds...", e);
-                tokio::time::sleep(Duration::from_secs(5)).await;
-            }
-        }
-    };
+    // Wait a bit for the database to be ready
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
+    // Initialize database
+    let pool = db::init_db(&database_url).await?;
     println!("Database initialized successfully");
 
     // Start API server
     let app = api::create_router(pool.clone());
     let api_handle = tokio::spawn(async move {
-        let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.unwrap();
-        println!("API server listening on port {}", port);
+        let listener = tokio::net::TcpListener::bind(("0.0.0.0", api_port)).await.unwrap();
+        println!("API server listening on port {}", api_port);
         axum::serve(listener, app).await.unwrap();
     });
 
@@ -89,16 +80,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let indexer_handle = tokio::spawn({
         let pool = pool.clone();
         async move {
-            let client = loop {
-                match PenumbraClient::connect(&rpc_url, pool.clone()).await {
-                    Ok(client) => break client,
-                    Err(e) => {
-                        eprintln!("Failed to connect to Penumbra node: {}. Retrying in 10 seconds...", e);
-                        tokio::time::sleep(Duration::from_secs(10)).await;
-                    }
-                }
-            };
-
+            let client = PenumbraClient::connect(&rpc_url, pool).await.unwrap();
             println!("Connected to Penumbra node at {}", rpc_url);
 
             loop {

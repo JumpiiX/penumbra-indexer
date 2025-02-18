@@ -132,12 +132,6 @@ pub async fn store_block(
         .execute(&mut *tx)
         .await?;
 
-    // Clean up old blocks
-    sqlx::query(CLEANUP_BLOCKS_SQL)
-        .bind(MAX_BLOCKS)
-        .execute(&mut *tx)
-        .await?;
-
     // Commit transaction
     tx.commit().await?;
 

@@ -4,16 +4,13 @@
  * This module handles:
  * - Database initialization
  * - Block storage and retrieval
- * - Automatic cleanup of old blocks
+ * - Historical blockchain data persistence
  *
  * @version 1.0
  */
 
 use sqlx::{Pool, Postgres};
 use crate::models::StoredBlock;
-
-/* Maximum number of blocks to keep in the database */
-const MAX_BLOCKS: i32 = 10;
 
 /* Maximum number of database connections */
 const MAX_DB_CONNECTIONS: u32 = 5;
@@ -53,19 +50,6 @@ const UPSERT_BLOCK_SQL: &str = r#"
         previous_block_hash = EXCLUDED.previous_block_hash,
         data = EXCLUDED.data,
         created_at = EXCLUDED.created_at
-"#;
-
-/*
- * SQL for cleaning up old blocks.
- * Keeps only the latest blocks based on MAX_BLOCKS.
- */
-const CLEANUP_BLOCKS_SQL: &str = r#"
-    DELETE FROM blocks
-    WHERE height NOT IN (
-        SELECT height FROM blocks
-        ORDER BY height DESC
-        LIMIT $1
-    )
 "#;
 
 /*
@@ -151,7 +135,7 @@ pub async fn get_latest_blocks(
     pool: &Pool<Postgres>,
 ) -> Result<Vec<StoredBlock>, sqlx::Error> {
     sqlx::query_as::<_, StoredBlock>(GET_LATEST_BLOCKS_SQL)
-        .bind(MAX_BLOCKS)
+        .bind(10)
         .fetch_all(pool)
         .await
 }

@@ -63,6 +63,25 @@ const GET_LATEST_BLOCKS_SQL: &str = r#"
 "#;
 
 /*
+ * SQL for retrieving a specific block by height.
+ * Includes full block data and ensures index usage.
+ */
+const GET_BLOCK_BY_HEIGHT_SQL: &str = r#"
+    SELECT
+        height,
+        time,
+        hash,
+        proposer_address,
+        tx_count,
+        previous_block_hash,
+        data,
+        created_at
+    FROM blocks
+    WHERE height = $1
+"#;
+
+
+/*
  * Initializes the database connection and schema.
  *
  * Sets up the PostgreSQL connection pool and creates the necessary tables
@@ -155,9 +174,7 @@ pub async fn get_block_by_height(
     pool: &Pool<Postgres>,
     height: i64,
 ) -> Result<Option<StoredBlock>, sqlx::Error> {
-    sqlx::query_as::<_, StoredBlock>(
-        "SELECT * FROM blocks WHERE height = $1"
-    )
+    sqlx::query_as::<_, StoredBlock>(GET_BLOCK_BY_HEIGHT_SQL)
         .bind(height)
         .fetch_optional(pool)
         .await

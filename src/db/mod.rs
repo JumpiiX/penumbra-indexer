@@ -155,3 +155,26 @@ pub async fn get_latest_blocks(
         .fetch_all(pool)
         .await
 }
+
+/*
+ * Retrieves a specific block by its height from the database.
+ *
+ * This function performs a direct query for a single block matching
+ * the provided height. Returns None if no block is found.
+ *
+ * @param pool Database connection pool
+ * @param height The blockchain height to query for
+ * @return Result<Option<StoredBlock>> The block if found, None if not exists
+ * @throws sqlx::Error If the database query fails
+ */
+pub async fn get_block_by_height(
+    pool: &Pool<Postgres>,
+    height: i64,
+) -> Result<Option<StoredBlock>, sqlx::Error> {
+    sqlx::query_as::<_, StoredBlock>(
+        "SELECT * FROM blocks WHERE height = $1"
+    )
+        .bind(height)
+        .fetch_optional(pool)
+        .await
+}

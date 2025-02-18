@@ -6,7 +6,7 @@ use axum::{
 };
 use sqlx::{Pool, Postgres};
 use crate::{db, models::BlockList};
-
+use axum::extract::Path;
 /*
  * Error response structure for API errors
  */
@@ -44,6 +44,44 @@ pub async fn get_latest_blocks(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(error_response)
             ).into_response()
+        }
+    }
+}
+
+
+/*
+ * Handler for GET /api/blocks/:height endpoint.
+ *
+ * Retrieves a specific block by its height. Returns appropriate HTTP status:
+ * - 200 OK with block data if found
+ * - 404 Not Found if block doesn't exist
+ * - 500 Internal Server Error on database errors
+ *
+ * @param pool PostgreSQL connection pool injected by Axum state
+ * @param height Block height from URL parameter
+ * @return Response with either block data or error information
+ */
+pub async fn get_block_by_height(
+    State(pool): State<Pool<Postgres>>,
+    Path(height): Path<i64>,
+) -> impl IntoResponse {
+    match db::get_block_by_height(&pool, height).await {
+        Ok(Some(block)) => {
+            (StatusCode::OK, Json(block)).into_response()
+        }
+        Ok(None) => {
+            let error_response = ErrorResponse {
+                error: format!("Block at height {} not found", height),
+                code: StatusCode::NOT_FOUND.as_u16(),
+            };
+            (StatusCode::NOT_FOUND, Json(error_response)).into_response()
+        }
+        Err(e) => {
+            let error_response = ErrorResponse {
+                error: format!("Database error: {}", e),
+                code: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+            };
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
         }
     }
 }

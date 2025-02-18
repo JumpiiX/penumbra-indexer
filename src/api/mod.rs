@@ -8,18 +8,19 @@ use sqlx::{Pool, Postgres};
 use tower_http::cors::{CorsLayer, Any};
 
 /*
-* Router configuration for the Penumbra API.
-*
-* Sets up route handling with CORS support and database connection state.
-* Defines the primary API endpoint for retrieving blockchain blocks.
-*
-* @function create_router
-* @param {Pool<Postgres>} pool - Database connection pool
-* @returns {Router} Configured Axum router
-*/
+ * Router configuration for the Penumbra API.
+ *
+ * Sets up route handling with CORS support and database connection state.
+ * Defines API endpoints for retrieving blockchain data.
+ *
+ * @function create_router
+ * @param {Pool<Postgres>} pool - Database connection pool
+ * @returns {Router} Configured Axum router
+ */
 pub fn create_router(pool: Pool<Postgres>) -> Router {
     Router::new()
         .route("/api/blocks", get(routes::get_latest_blocks))
+        .route("/api/blocks/:height", get(routes::get_block_by_height))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)

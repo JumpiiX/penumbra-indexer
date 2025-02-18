@@ -93,7 +93,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         // Only process the block if it hasn't been processed yet
                         if Some(latest_height) != last_processed_block {
-                            println!("Fetching latest block {}", latest_height);
                             if let Err(e) = client.fetch_blocks(latest_height, latest_height, 5).await {
                                 eprintln!("Error fetching latest block: {}", e);
                             }

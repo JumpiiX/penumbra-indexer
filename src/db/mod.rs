@@ -10,7 +10,7 @@
  */
 
 use sqlx::{Pool, Postgres};
-use crate::models::StoredBlock;
+use crate::models::{ChainStats, StoredBlock};
 
 /* Maximum number of database connections */
 const MAX_DB_CONNECTIONS: u32 = 5;
@@ -80,6 +80,24 @@ const GET_BLOCK_BY_HEIGHT_SQL: &str = r#"
     WHERE height = $1
 "#;
 
+/*
+ * SQL for retrieving chain statistics.
+ * Calculates various metrics about the blockchain state.
+ */
+const GET_CHAIN_STATS_SQL: &str = r#"
+    WITH block_times AS (
+        SELECT
+            EXTRACT(EPOCH FROM (time - lag(time) OVER (ORDER BY height)))::float8 as block_time
+        FROM blocks
+    )
+    SELECT
+        COUNT(*) as total_blocks,
+        COUNT(DISTINCT proposer_address) as active_validators,
+        SUM(tx_count) as total_transactions,
+        AVG(block_time)::float8 as avg_block_time
+    FROM blocks, block_times
+    WHERE block_time IS NOT NULL
+"#;
 
 /*
  * Initializes the database connection and schema.
@@ -177,5 +195,26 @@ pub async fn get_block_by_height(
     sqlx::query_as::<_, StoredBlock>(GET_BLOCK_BY_HEIGHT_SQL)
         .bind(height)
         .fetch_optional(pool)
+        .await
+}
+
+/*
+ * Retrieves statistical information about the blockchain.
+ *
+ * Calculates metrics including:
+ * - Total number of blocks
+ * - Number of active validators
+ * - Total transactions processed
+ * - Average block time
+ *
+ * @param pool Database connection pool
+ * @return Result<ChainStats> Chain statistics
+ * @throws sqlx::Error If the query fails
+ */
+pub async fn get_chain_stats(
+    pool: &Pool<Postgres>,
+) -> Result<ChainStats, sqlx::Error> {
+    sqlx::query_as::<_, ChainStats>(GET_CHAIN_STATS_SQL)
+        .fetch_one(pool)
         .await
 }

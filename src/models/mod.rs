@@ -79,3 +79,29 @@ impl BlockList {
         }
     }
 }
+
+/*
+ * Statistics about the blockchain state.
+ *
+ * Provides aggregated metrics about the blockchain including:
+ * - Total number of blocks stored
+ * - Count of unique validators (proposers)
+ * - Total transactions processed
+ * - Average time between blocks
+ *
+ * @see get_chain_stats
+ */
+#[derive(Debug, Serialize, FromRow)]
+pub struct ChainStats {
+    /* Total number of blocks in the chain */
+    pub total_blocks: i64,
+
+    /* Number of unique validators seen */
+    pub active_validators: i64,
+
+    /* Total number of transactions processed */
+    pub total_transactions: i64,
+
+    /* Average time between blocks in seconds */
+    pub avg_block_time: Option<f64>,
+}

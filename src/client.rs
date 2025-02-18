@@ -213,7 +213,6 @@ impl PenumbraClient {
 
         while current_height <= end_height {
             let batch_end = std::cmp::min(current_height + batch_size, end_height);
-            println!("Fetching blocks {} to {}", current_height, batch_end);
 
             for height in current_height..=batch_end {
                 if let Err(e) = self.process_single_block(height).await {

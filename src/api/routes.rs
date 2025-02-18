@@ -85,3 +85,29 @@ pub async fn get_block_by_height(
         }
     }
 }
+
+/*
+ * Handler for GET /api/stats endpoint.
+ *
+ * Provides statistical information about the blockchain state
+ * including block counts, transaction volumes, and performance metrics.
+ *
+ * @param pool PostgreSQL connection pool injected by Axum state
+ * @return JSON response with chain statistics or error information
+ */
+pub async fn get_chain_stats(
+    State(pool): State<Pool<Postgres>>,
+) -> impl IntoResponse {
+    match db::get_chain_stats(&pool).await {
+        Ok(stats) => {
+            (StatusCode::OK, Json(stats)).into_response()
+        }
+        Err(e) => {
+            let error_response = ErrorResponse {
+                error: format!("Database error: {}", e),
+                code: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+            };
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+        }
+    }
+}

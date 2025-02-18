@@ -2,6 +2,8 @@
 
 A real-time blockchain indexer for the Penumbra network that collects raw block data and provides an API for querying the latest blocks.
 
+![Penumbra Indexer](https://www.designatives.com/static/hero-cf12db6b70860afb3e14424516a3b029.png)
+
 ## Overview
 
 This application connects to a Penumbra node, continuously synchronizes the latest blocks, stores them in a PostgreSQL database, and provides a REST API for querying the data.

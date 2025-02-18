@@ -92,10 +92,10 @@ const GET_CHAIN_STATS_SQL: &str = r#"
     )
     SELECT
         (SELECT MAX(height) FROM blocks) as total_blocks,
-        COUNT(DISTINCT proposer_address) as active_validators,
-        SUM(tx_count) as total_transactions,
+        (SELECT COUNT(DISTINCT proposer_address) FROM blocks) as active_validators,
+        (SELECT SUM(tx_count) FROM blocks) as total_transactions,
         AVG(block_time)::float8 as avg_block_time
-    FROM blocks, block_times
+    FROM block_times
     WHERE block_time IS NOT NULL
 "#;
 

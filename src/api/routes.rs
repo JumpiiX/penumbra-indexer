@@ -5,7 +5,7 @@ use axum::{
     response::IntoResponse,
 };
 use sqlx::{Pool, Postgres};
-use crate::{db, models::BlockList};
+use crate::{db, models::BlockList, models::TransactionList};
 use axum::extract::Path;
 /*
  * Error response structure for API errors
@@ -101,6 +101,51 @@ pub async fn get_chain_stats(
     match db::get_chain_stats(&pool).await {
         Ok(stats) => {
             (StatusCode::OK, Json(stats)).into_response()
+        }
+        Err(e) => {
+            let error_response = ErrorResponse {
+                error: format!("Database error: {}", e),
+                code: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+            };
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+        }
+    }
+}
+
+pub async fn get_latest_transactions(
+    State(pool): State<Pool<Postgres>>,
+) -> impl IntoResponse {
+    match db::get_latest_transactions(&pool, 50).await {
+        Ok(transactions) => {
+            let response = TransactionList::new(transactions);
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(e) => {
+            let error_response = ErrorResponse {
+                error: format!("Database error: {}", e),
+                code: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+            };
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+        }
+    }
+}
+
+pub async fn get_transactions_by_block_height(
+    State(pool): State<Pool<Postgres>>,
+    Path(height): Path<i64>,
+) -> impl IntoResponse {
+    match db::get_transactions_by_block_height(&pool, height).await {
+        Ok(transactions) => {
+            if transactions.is_empty() {
+                let error_response = ErrorResponse {
+                    error: format!("No transactions found for block at height {}", height),
+                    code: StatusCode::NOT_FOUND.as_u16(),
+                };
+                return (StatusCode::NOT_FOUND, Json(error_response)).into_response();
+            }
+
+            let response = TransactionList::new(transactions);
+            (StatusCode::OK, Json(response)).into_response()
         }
         Err(e) => {
             let error_response = ErrorResponse {

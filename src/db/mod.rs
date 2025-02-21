@@ -8,10 +8,9 @@
  *
  * @version 1.0
  */
-
+use chrono::{DateTime, Utc};
 use sqlx::{Pool, Postgres};
-use crate::models::{ChainStats, StoredBlock};
-
+use crate::models::{ChainStats, StoredBlock, Transaction};
 /* Maximum number of database connections */
 const MAX_DB_CONNECTIONS: u32 = 5;
 
@@ -28,6 +27,17 @@ const CREATE_TABLE_SQL: &str = r#"
         tx_count INTEGER NOT NULL,
         previous_block_hash TEXT,
         data JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+"#;
+
+const CREATE_TRANSACTIONS_TABLE_SQL: &str = r#"
+    CREATE TABLE IF NOT EXISTS transactions (
+        id SERIAL PRIMARY KEY,
+        tx_hash TEXT UNIQUE NOT NULL,
+        block_height BIGINT NOT NULL REFERENCES blocks(height),
+        time TIMESTAMP WITH TIME ZONE NOT NULL,
+        data TEXT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
 "#;
@@ -50,6 +60,14 @@ const UPSERT_BLOCK_SQL: &str = r#"
         previous_block_hash = EXCLUDED.previous_block_hash,
         data = EXCLUDED.data,
         created_at = EXCLUDED.created_at
+"#;
+
+const INSERT_TRANSACTION_SQL: &str = r#"
+    INSERT INTO transactions (
+        tx_hash, block_height, time, data, created_at
+    )
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (tx_hash) DO NOTHING
 "#;
 
 /*
@@ -99,6 +117,18 @@ const GET_CHAIN_STATS_SQL: &str = r#"
     WHERE block_time IS NOT NULL
 "#;
 
+const GET_TRANSACTIONS_BY_BLOCK_HEIGHT_SQL: &str = r#"
+    SELECT * FROM transactions
+    WHERE block_height = $1
+    ORDER BY id ASC
+"#;
+
+const GET_LATEST_TRANSACTIONS_SQL: &str = r#"
+    SELECT * FROM transactions
+    ORDER BY block_height DESC, id ASC
+    LIMIT $1
+"#;
+
 /*
  * Initializes the database connection and schema.
  *
@@ -117,6 +147,10 @@ pub async fn init_db(database_url: &str) -> Result<Pool<Postgres>, sqlx::Error> 
 
     // Create tables if they don't exist
     sqlx::query(CREATE_TABLE_SQL)
+        .execute(&pool)
+        .await?;
+
+    sqlx::query(CREATE_TRANSACTIONS_TABLE_SQL)
         .execute(&pool)
         .await?;
 
@@ -216,5 +250,44 @@ pub async fn get_chain_stats(
 ) -> Result<ChainStats, sqlx::Error> {
     sqlx::query_as::<_, ChainStats>(GET_CHAIN_STATS_SQL)
         .fetch_one(pool)
+        .await
+}
+
+pub async fn store_transaction(
+    pool: &Pool<Postgres>,
+    tx_hash: &str,
+    block_height: i64,
+    time: DateTime<Utc>,
+    data: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(INSERT_TRANSACTION_SQL)
+        .bind(tx_hash)
+        .bind(block_height)
+        .bind(time)
+        .bind(data)
+        .bind(Utc::now())
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+pub async fn get_latest_transactions(
+    pool: &Pool<Postgres>,
+    limit: i64,
+) -> Result<Vec<Transaction>, sqlx::Error> {
+    sqlx::query_as::<_, Transaction>(GET_LATEST_TRANSACTIONS_SQL)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn get_transactions_by_block_height(
+    pool: &Pool<Postgres>,
+    height: i64,
+) -> Result<Vec<Transaction>, sqlx::Error> {
+    sqlx::query_as::<_, Transaction>(GET_TRANSACTIONS_BY_BLOCK_HEIGHT_SQL)
+        .bind(height)
+        .fetch_all(pool)
         .await
 }

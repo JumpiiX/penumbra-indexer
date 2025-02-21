@@ -22,6 +22,8 @@ pub fn create_router(pool: Pool<Postgres>) -> Router {
         .route("/api/blocks", get(routes::get_latest_blocks))
         .route("/api/blocks/:height", get(routes::get_block_by_height))
         .route("/api/stats", get(routes::get_chain_stats))
+        .route("/api/transactions", get(routes::get_latest_transactions))
+        .route("/api/blocks/:height/transactions", get(routes::get_transactions_by_block_height))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)

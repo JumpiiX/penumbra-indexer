@@ -8,6 +8,9 @@
  *
  * @version 1.0
  */
+mod blocks;
+mod transactions;
+mod stats;
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
@@ -104,4 +107,30 @@ pub struct ChainStats {
 
     /* Average time between blocks in seconds */
     pub avg_block_time: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Transaction {
+    pub id: i32,
+    pub tx_hash: String,
+    pub block_height: i64,
+    pub time: DateTime<Utc>,
+    pub data: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TransactionList {
+    pub transactions: Vec<Transaction>,
+    pub total_count: i64,
+}
+
+impl TransactionList {
+    pub fn new(transactions: Vec<Transaction>) -> Self {
+        let total_count = transactions.len() as i64;
+        Self {
+            transactions,
+            total_count,
+        }
+    }
 }

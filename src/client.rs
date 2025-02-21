@@ -243,9 +243,10 @@ impl PenumbraClient {
         if let Some(last_block) = &block.result.block.header.last_block_id {
             println!("  Previous block hash: {}", last_block.hash);
         }
-        if let Some(txs) = &block.result.block.data.txs {
-            println!("  Transaction count: {}", txs.len());
-        }
+
+        // Use clone or as_ref to avoid the move
+        let tx_count = block.result.block.data.txs.as_ref().map_or(0, |txs| txs.len()) as i32;
+        println!("  Transaction count: {}", tx_count);
         println!("-------------------");
 
         let result_json = serde_json::to_value(&block.result)?;
@@ -254,16 +255,32 @@ impl PenumbraClient {
             time: block.result.block.header.time,
             hash: block.result.block_id.hash.clone(),
             proposer_address: block.result.block.header.proposer_address.clone(),
-            tx_count: block.result.block.data.txs.map_or(0, |txs| txs.len()) as i32,
+            tx_count: tx_count,  // Use the variable we calculated above
             previous_block_hash: block.result.block.header.last_block_id.map(|id| id.hash),
             data: result_json,
             created_at: Utc::now(),
         };
 
-        crate::db::store_block(&self.db_pool, stored_block).await?;
+        crate::db::store_block(&self.db_pool, stored_block.clone()).await?;
+
+        // Now we can use txs again
+        if let Some(txs) = &block.result.block.data.txs {
+            for (i, tx_data) in txs.iter().enumerate() {
+                // Generate a transaction hash
+                let tx_hash = format!("{}_{}", block.result.block_id.hash, i);
+
+                crate::db::store_transaction(
+                    &self.db_pool,
+                    &tx_hash,
+                    height as i64,
+                    block.result.block.header.time,
+                    tx_data
+                ).await?;
+            }
+        }
+
         Ok(())
     }
-
     /*
      * Fetches a single block from the Penumbra blockchain.
      *

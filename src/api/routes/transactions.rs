@@ -1,3 +1,4 @@
+
 /*
 * Transaction API module.
 *
@@ -23,7 +24,10 @@ pub async fn get_latest_transactions(
 ) -> Result<(StatusCode, Json<TransactionList>), (StatusCode, Json<ErrorResponse>)> {
     match db::transactions::get_latest_transactions(&pool, 50).await {
         Ok(transactions) => {
-            let response = TransactionList::new(transactions);
+            let summaries = transactions.into_iter()
+                .map(|tx| tx.to_summary())
+                .collect();
+            let response = TransactionList::new(summaries);
             Ok((StatusCode::OK, Json(response)))
         }
         Err(e) => Err(database_error(e)),
@@ -48,7 +52,10 @@ pub async fn get_transactions_by_block_height(
             if transactions.is_empty() {
                 return Err(not_found_error(format!("No transactions found for block at height {}", height)));
             }
-            let response = TransactionList::new(transactions);
+            let summaries = transactions.into_iter()
+                .map(|tx| tx.to_summary())
+                .collect();
+            let response = TransactionList::new(summaries);
             Ok((StatusCode::OK, Json(response)))
         }
         Err(e) => Err(database_error(e)),

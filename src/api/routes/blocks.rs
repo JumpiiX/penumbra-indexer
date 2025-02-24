@@ -23,7 +23,10 @@ pub async fn get_latest_blocks(
 ) -> Result<(StatusCode, Json<BlockList>), (StatusCode, Json<ErrorResponse>)> {
     match db::blocks::get_latest_blocks(&pool).await {
         Ok(blocks) => {
-            let response = BlockList::new(blocks);
+            let summaries = blocks.into_iter()
+                .map(|block| block.to_summary())
+                .collect();
+            let response = BlockList::new(summaries);
             Ok((StatusCode::OK, Json(response)))
         }
         Err(e) => Err(database_error(e)),

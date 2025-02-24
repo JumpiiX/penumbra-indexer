@@ -108,6 +108,17 @@ impl PenumbraClient {
         println!("-------------------");
 
         let result_json = serde_json::to_value(&block.result)?;
+
+        // Calculate total burn amount for the block
+        let mut total_burn = 0.0;
+        if let Some(txs) = &block.result.block.data.txs {
+            for tx_data in txs.iter() {
+                if let Some(burn) = self.extract_burn_amount(tx_data) {
+                    total_burn += burn;
+                }
+            }
+        }
+
         let stored_block = StoredBlock {
             height: height as i64,
             time: block.result.block.header.time,
@@ -115,6 +126,7 @@ impl PenumbraClient {
             proposer_address: block.result.block.header.proposer_address.clone(),
             tx_count,
             previous_block_hash: block.result.block.header.last_block_id.map(|id| id.hash),
+            burn_amount: total_burn,
             data: result_json,
             created_at: Utc::now(),
         };
@@ -125,17 +137,54 @@ impl PenumbraClient {
             for (i, tx_data) in txs.iter().enumerate() {
                 let tx_hash = format!("{}_{}", block.result.block_id.hash, i);
 
+                // Extract transaction type and amount
+                let (action_type, amount) = self.analyze_transaction(tx_data);
+
                 crate::db::transactions::store_transaction(
                     &self.db_pool,
                     &tx_hash,
                     height as i64,
                     block.result.block.header.time,
+                    &action_type,
+                    amount,
                     tx_data
                 ).await?;
             }
         }
 
         Ok(())
+    }
+
+    /*
+    * Analyzes a transaction to determine its type and amount.
+    *
+    * @param tx_data Raw transaction data
+    * @return Tuple of (action_type, optional_amount)
+    */
+    fn analyze_transaction(&self, tx_data: &str) -> (String, Option<f64>) {
+        // Here you would implement the logic to decode the transaction data
+        // and determine the type and amount based on your chain's specifics
+
+        // For now, returning placeholder values
+        if tx_data.contains("spend") {
+            ("spend".to_string(), Some(3.0))
+        } else {
+            ("not yet supported act...".to_string(), None)
+        }
+    }
+
+    /*
+    * Extracts the burn amount from a transaction.
+    *
+    * @param tx_data Raw transaction data
+    * @return Optional burn amount
+    */
+    fn extract_burn_amount(&self, tx_data: &str) -> Option<f64> {
+        // Here you would implement the logic to decode the transaction data
+        // and extract any burn amount based on your chain's specifics
+
+        // For now, returning None as placeholder
+        None
     }
 
     /*

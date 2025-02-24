@@ -1,5 +1,5 @@
 /*
-* Transaction-specific database operations.
+* Database operations for transactions.
 *
 * Handles all database interactions related to blockchain transactions,
 * including storing and retrieving transaction data.
@@ -11,25 +11,23 @@ use crate::models::Transaction;
 
 /* SQL queries for transactions */
 
-/* SQL for inserting a new transaction.
- * Uses ON CONFLICT to handle duplicate inserts.
- */
+/* SQL for inserting a new transaction */
 const INSERT_TRANSACTION_SQL: &str = r#"
     INSERT INTO transactions (
-        tx_hash, block_height, time, data, created_at
+        tx_hash, block_height, time, action_type, amount, data, created_at
     )
-    VALUES ($1, $2, $3, $4, $5)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
     ON CONFLICT (tx_hash) DO NOTHING
 "#;
 
-/* SQL for retrieving transactions by block height. */
+/* SQL for retrieving transactions by block height */
 const GET_TRANSACTIONS_BY_BLOCK_HEIGHT_SQL: &str = r#"
     SELECT * FROM transactions
     WHERE block_height = $1
     ORDER BY id ASC
 "#;
 
-/* SQL for retrieving the latest transactions. */
+/* SQL for retrieving the latest transactions */
 const GET_LATEST_TRANSACTIONS_SQL: &str = r#"
     SELECT * FROM transactions
     ORDER BY block_height DESC, id ASC
@@ -43,6 +41,8 @@ const GET_LATEST_TRANSACTIONS_SQL: &str = r#"
 * @param tx_hash Transaction hash identifier
 * @param block_height Block height containing this transaction
 * @param time Transaction timestamp
+* @param action_type Type of transaction action
+* @param amount Optional transaction amount
 * @param data Transaction data (usually base64-encoded)
 */
 pub async fn store_transaction(
@@ -50,12 +50,16 @@ pub async fn store_transaction(
     tx_hash: &str,
     block_height: i64,
     time: DateTime<Utc>,
+    action_type: &str,
+    amount: Option<f64>,
     data: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(INSERT_TRANSACTION_SQL)
         .bind(tx_hash)
         .bind(block_height)
         .bind(time)
+        .bind(action_type)
+        .bind(amount)
         .bind(data)
         .bind(Utc::now())
         .execute(pool)
@@ -66,8 +70,6 @@ pub async fn store_transaction(
 
 /*
 * Retrieves the latest transactions.
-*
-* Gets the most recent transactions across all blocks.
 *
 * @param pool Database connection pool
 * @param limit Maximum number of transactions to retrieve

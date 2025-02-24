@@ -17,6 +17,9 @@ use crate::models::StoredBlock;
 /* Default retry delay in seconds */
 const RETRY_DELAY: u64 = 5;
 
+/* Default batch size for block synchronization */
+const DEFAULT_BATCH_SIZE: u64 = 100;
+
 /*
 * Main client for interacting with the Penumbra blockchain.
 *
@@ -28,7 +31,7 @@ const RETRY_DELAY: u64 = 5;
 #[derive(Debug, Clone)]
 pub struct PenumbraClient {
     rpc_client: RpcClient,
-    db_pool: Pool<Postgres>,
+    pub db_pool: Pool<Postgres>,
 }
 
 impl PenumbraClient {
@@ -57,6 +60,61 @@ impl PenumbraClient {
     */
     pub async fn get_status(&self) -> Result<crate::client::models::StatusResponse, Box<dyn Error + Send + Sync>> {
         self.rpc_client.get_status().await
+    }
+
+    /*
+    * Synchronizes blocks from genesis to the current blockchain height.
+    * Used for initial sync when the indexer first starts.
+    *
+    * @param batch_size Number of blocks to fetch in each batch
+    */
+    pub async fn sync_from_genesis(&self, batch_size: u64) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // Get the current blockchain height
+        let status = self.get_status().await?;
+        let chain_height: u64 = status.result.sync_info.latest_block_height
+            .parse()
+            .unwrap_or(0);
+
+        if chain_height == 0 {
+            return Err("Failed to parse chain height".into());
+        }
+
+        println!("Current blockchain height: {}", chain_height);
+
+        // Get the highest block we have in our database
+        let latest_blocks = crate::db::blocks::get_latest_blocks(&self.db_pool).await?;
+        let db_height = if !latest_blocks.is_empty() {
+            latest_blocks[0].height as u64
+        } else {
+            0 // Database is empty
+        };
+
+        println!("Latest indexed height: {}", db_height);
+
+        // If database is up to date
+        if db_height >= chain_height {
+            println!("Database is already up to date with blockchain");
+            return Ok(());
+        }
+
+        // Start from genesis (block 1) if database is empty
+        let start_height = if db_height == 0 {
+            println!("Starting sync from genesis...");
+            1 // Genesis block (adjust if your chain starts at block 0)
+        } else {
+            println!("Continuing sync from last indexed block...");
+            db_height + 1
+        };
+
+        // Use existing fetch_blocks method with progress reporting
+        println!("Fetching blocks from {} to {} (total: {} blocks)",
+                 start_height, chain_height, chain_height - start_height + 1);
+
+        // Sync blocks using existing fetch_blocks method
+        self.fetch_blocks(start_height, chain_height, batch_size).await?;
+
+        println!("Initial blockchain synchronization completed");
+        Ok(())
     }
 
     /*
@@ -109,7 +167,6 @@ impl PenumbraClient {
 
         let result_json = serde_json::to_value(&block.result)?;
 
-        // Calculate total burn amount for the block
         let mut total_burn = 0.0;
         if let Some(txs) = &block.result.block.data.txs {
             for tx_data in txs.iter() {

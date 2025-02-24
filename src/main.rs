@@ -25,6 +25,8 @@ use tokio::net::TcpListener;
 use tokio::time;
 use crate::client::PenumbraClient;
 
+const DEFAULT_BATCH_SIZE: u64 = 100;
+
 /*
  * Main application entry point.
  *
@@ -48,6 +50,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .unwrap_or_else(|_| "3000".to_string())
         .parse::<u16>()
         .expect("API_PORT must be a valid port number");
+    let batch_size = env::var("BATCH_SIZE")
+        .unwrap_or_else(|_| DEFAULT_BATCH_SIZE.to_string())
+        .parse::<u64>()
+        .unwrap_or(DEFAULT_BATCH_SIZE);
 
     println!("Connecting to database at {}", database_url);
     time::sleep(Duration::from_secs(5)).await;
@@ -66,8 +72,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let indexer_handle = tokio::spawn({
         let pool = pool.clone();
         async move {
-            let client = PenumbraClient::connect(&rpc_url, pool).await.unwrap();
-            println!("Connected to Penumbra node at {}", rpc_url);
+            let client = match PenumbraClient::connect(&rpc_url, pool).await {
+                Ok(client) => {
+                    println!("Connected to Penumbra node at {}", rpc_url);
+                    client
+                },
+                Err(e) => {
+                    eprintln!("Failed to connect to Penumbra node: {}", e);
+                    return;
+                }
+            };
+
+            println!("Performing initial blockchain synchronization from genesis...");
+            if let Err(e) = client.sync_from_genesis(batch_size).await {
+                eprintln!("Error during initial sync: {}", e);
+            }
 
             let mut last_processed_block: Option<u64> = None;
 

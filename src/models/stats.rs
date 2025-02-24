@@ -1,45 +1,84 @@
-/*
-* Stats model definitions.
-*
-* Defines entities for storing blockchain statistics and their
-* serialization properties.
-*/
-
 use serde::Serialize;
 use chrono::{DateTime, Utc};
-use sqlx::FromRow;
 
-/* Database model for chain statistics */
-#[derive(Debug, Serialize, FromRow)]
-pub struct DbChainStats {
-    pub total_blocks: i64,
-    pub total_transactions: i64,
-    pub total_burn: f64,
-    pub avg_block_time: Option<f64>
-}
-
-/* Database model for daily statistics */
-#[derive(Debug, Serialize, FromRow)]
-pub struct DbDailyStats {
-    pub date: DateTime<Utc>,
-    pub tx_count: i64,
-    pub total_burn: f64
-}
-
-/* API response model for chain statistics */
 #[derive(Debug, Serialize)]
-pub struct ChainStats {
-    pub total_blocks: i64,
-    pub total_transactions: i64,
-    pub total_burn: f64,
-    pub avg_block_time: Option<f64>,
-    pub transaction_history: Vec<DailyStats>,
-    pub burn_history: Vec<DailyStats>
+pub struct StatsResponse {
+    pub current_block: CurrentBlockStats,
+    pub total_transactions: TransactionStats,
+    pub total_burn: BurnStats,
 }
 
-/* API response model for daily statistics */
 #[derive(Debug, Serialize)]
-pub struct DailyStats {
-    pub date: DateTime<Utc>,
-    pub value: f64
+pub struct CurrentBlockStats {
+    pub height: i64,
+    pub block_time: String,
+    pub received_new: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TransactionStats {
+    pub count: i64,
+    pub new_today: i64,
+    pub history: Vec<ChartPoint>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BurnStats {
+    pub amount: String,
+    pub history: Vec<ChartPoint>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChartPoint {
+    pub date: String,
+    pub value: i64,
+}
+
+#[derive(Debug)]
+pub struct BlockTimingInfo {
+    pub height: i64,
+    pub timestamp: DateTime<Utc>,
+}
+
+impl StatsResponse {
+    pub fn new(
+        current_block: CurrentBlockStats,
+        total_transactions: TransactionStats,
+        total_burn: BurnStats,
+    ) -> Self {
+        Self {
+            current_block,
+            total_transactions,
+            total_burn,
+        }
+    }
+}
+
+impl CurrentBlockStats {
+    pub fn new(height: i64, block_time: String, received_new: String) -> Self {
+        Self {
+            height,
+            block_time,
+            received_new,
+        }
+    }
+}
+
+impl TransactionStats {
+    pub fn new(count: i64, new_today: i64, history: Vec<ChartPoint>) -> Self {
+        Self {
+            count,
+            new_today,
+            history,
+        }
+    }
+}
+
+impl BurnStats {
+    pub fn new(amount: f64, history: Vec<ChartPoint>) -> Self {
+        Self {
+            amount: format!("{} UM", amount.round() as i64),
+            history,
+        }
+    }
 }

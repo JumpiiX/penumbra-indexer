@@ -12,4 +12,4 @@ pub mod stats;
 
 pub use block::StoredBlock;
 pub use transaction::Transaction;
-pub use stats::ChainStats;
+pub use stats::{StatsResponse, CurrentBlockStats, TransactionStats, BurnStats, ChartPoint};

@@ -15,6 +15,7 @@ mod db;
 mod api;
 mod models;
 mod client;
+mod error;
 
 use std::error::Error;
 use std::env;

@@ -1,57 +1,84 @@
-/*
-* Blockchain statistics API module.
-*
-* Handles API endpoints related to retrieving blockchain statistics,
-* including block counts, transaction volumes, and burn amounts.
-*/
-
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, Json};
+use chrono::Utc;
 use sqlx::{Pool, Postgres};
-use crate::{db, models::stats::{ChainStats, DailyStats}};
-use super::common::{database_error, ErrorResponse};
+use tracing::{error, instrument};
 
-/*
-* Retrieves blockchain statistics.
-*
-* @param pool Database connection pool
-* @return ChainStats containing blockchain metrics
-*/
+use crate::{
+    db::stats::StatsQueries,
+    models::stats::{BurnStats, CurrentBlockStats, StatsResponse, TransactionStats},
+    error::ApiError,
+};
+
+#[instrument(skip(pool))]
 pub async fn get_chain_stats(
     State(pool): State<Pool<Postgres>>,
-) -> Result<(StatusCode, Json<ChainStats>), (StatusCode, Json<ErrorResponse>)> {
-    let stats = match db::stats::get_chain_stats(&pool).await {
-        Ok(base_stats) => base_stats,
-        Err(e) => return Err(database_error(e)),
-    };
+) -> Result<Json<StatsResponse>, ApiError> {
+    // Capture current time before fetching latest block
+    let now = Utc::now();
 
-    let daily_stats = match db::stats::get_daily_stats(&pool).await {
-        Ok(daily) => daily,
-        Err(e) => return Err(database_error(e)),
-    };
+    // Get current block information
+    let latest_block = StatsQueries::get_latest_block_timing(&pool)
+        .await
+        .map_err(|e| {
+            error!("Failed to fetch latest block: {}", e);
+            ApiError::DatabaseError(e)
+        })?;
 
-    // Convert daily stats into the format needed for the response
-    let transaction_history: Vec<DailyStats> = daily_stats.iter()
-        .map(|stat| DailyStats {
-            date: stat.date,
-            value: stat.tx_count as f64,
-        })
-        .collect();
+    // Get previous block for time difference calculation
+    let prev_block = StatsQueries::get_previous_block_timing(&pool, latest_block.height)
+        .await
+        .map_err(|e| {
+            error!("Failed to fetch previous block: {}", e);
+            ApiError::DatabaseError(e)
+        })?;
 
-    let burn_history: Vec<DailyStats> = daily_stats.iter()
-        .map(|stat| DailyStats {
-            date: stat.date,
-            value: stat.total_burn,
-        })
-        .collect();
+    // Calculate time differences as integers
+    let block_time = (latest_block.timestamp - prev_block.timestamp).num_seconds();
+    let received_new = (now - latest_block.timestamp).num_seconds().max(0);
 
-    let response = ChainStats {
-        total_blocks: stats.total_blocks,
-        total_transactions: stats.total_transactions,
-        total_burn: stats.total_burn,
-        avg_block_time: stats.avg_block_time,
-        transaction_history,
-        burn_history,
-    };
+    // Get transaction statistics
+    let total_tx_count = StatsQueries::get_total_transactions(&pool)
+        .await
+        .map_err(|e| {
+            error!("Failed to fetch total transactions: {}", e);
+            ApiError::DatabaseError(e)
+        })?;
 
-    Ok((StatusCode::OK, Json(response)))
+    let new_today_tx = StatsQueries::get_today_transactions(&pool)
+        .await
+        .map_err(|e| {
+            error!("Failed to fetch today's transactions: {}", e);
+            ApiError::DatabaseError(e)
+        })?;
+
+    let tx_history = StatsQueries::get_transaction_history(&pool)
+        .await
+        .map_err(|e| {
+            error!("Failed to fetch transaction history: {}", e);
+            ApiError::DatabaseError(e)
+        })?;
+
+    // Get burn statistics
+    let total_burn = StatsQueries::get_total_burn(&pool)
+        .await
+        .map_err(|e| {
+            error!("Failed to fetch total burn: {}", e);
+            ApiError::DatabaseError(e)
+        })?;
+
+    let burn_history = StatsQueries::get_burn_history(&pool)
+        .await
+        .map_err(|e| {
+            error!("Failed to fetch burn history: {}", e);
+            ApiError::DatabaseError(e)
+        })?;
+
+    // Construct response
+    let response = StatsResponse::new(
+        CurrentBlockStats::new(latest_block.height, block_time.to_string(), received_new.to_string()),
+        TransactionStats::new(total_tx_count, new_today_tx, tx_history),
+        BurnStats::new(total_burn, burn_history),
+    );
+
+    Ok(Json(response))
 }

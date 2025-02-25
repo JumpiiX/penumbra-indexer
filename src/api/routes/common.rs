@@ -6,13 +6,17 @@
 */
 
 use axum::{http::StatusCode, Json};
+use utoipa::ToSchema;
 
 /*
 * Represents a structured error response.
 */
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ToSchema)]
 pub struct ErrorResponse {
+    /// Error message describing what went wrong
     pub error: String,
+
+    /// HTTP status code
     pub code: u16,
 }
 

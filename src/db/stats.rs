@@ -56,7 +56,6 @@ impl StatsQueries {
     }
 
     pub async fn get_transaction_history(pool: &Pool<Postgres>) -> SqlxResult<Vec<ChartPoint>> {
-        // Get transaction counts for the last few days
         let records = sqlx::query_as::<_, (String, i64)>(
             "SELECT TO_CHAR(DATE(time), 'DD') as date, COALESCE(SUM(tx_count), 0) as value
              FROM blocks
@@ -107,12 +106,11 @@ impl StatsQueries {
             .fetch_all(pool)
             .await?;
 
-        // Format for chart display
         Ok(records
             .into_iter()
             .map(|(date, value)| ChartPoint {
                 date,
-                value: value as i64, // Convert to integer for display
+                value: value as i64,
             })
             .collect())
     }

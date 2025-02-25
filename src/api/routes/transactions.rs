@@ -1,4 +1,3 @@
-
 /*
 * Transaction API module.
 *
@@ -19,6 +18,15 @@ use super::common::{database_error, not_found_error, ErrorResponse};
 * @param pool Database connection pool
 * @return JSON response containing recent transactions
 */
+#[utoipa::path(
+    get,
+    path = "/api/transactions",
+    tag = "Transactions",
+    responses(
+        (status = 200, description = "Latest transactions retrieved successfully", body = TransactionList),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    )
+)]
 pub async fn get_latest_transactions(
     State(pool): State<Pool<Postgres>>,
 ) -> Result<(StatusCode, Json<TransactionList>), (StatusCode, Json<ErrorResponse>)> {
@@ -43,6 +51,19 @@ pub async fn get_latest_transactions(
 * @param height Block height to query
 * @return JSON response containing transactions for the specified block
 */
+#[utoipa::path(
+    get,
+    path = "/api/blocks/{height}/transactions",
+    tag = "Transactions",
+    params(
+        ("height" = i64, Path, description = "Block height to retrieve transactions for")
+    ),
+    responses(
+        (status = 200, description = "Transactions retrieved successfully", body = TransactionList),
+        (status = 404, description = "No transactions found for the specified block height", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    )
+)]
 pub async fn get_transactions_by_block_height(
     State(pool): State<Pool<Postgres>>,
     Path(height): Path<i64>,

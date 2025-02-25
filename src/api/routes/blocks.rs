@@ -18,6 +18,15 @@ use super::common::{database_error, not_found_error, ErrorResponse};
 * @param pool Database connection pool
 * @return JSON response containing recent blocks
 */
+#[utoipa::path(
+    get,
+    path = "/api/blocks",
+    tag = "Blocks",
+    responses(
+        (status = 200, description = "List of latest blocks retrieved successfully", body = BlockList),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    )
+)]
 pub async fn get_latest_blocks(
     State(pool): State<Pool<Postgres>>,
 ) -> Result<(StatusCode, Json<BlockList>), (StatusCode, Json<ErrorResponse>)> {
@@ -42,6 +51,19 @@ pub async fn get_latest_blocks(
 * @param height Block height to query
 * @return JSON response containing the requested block data
 */
+#[utoipa::path(
+    get,
+    path = "/api/blocks/{height}",
+    tag = "Blocks",
+    params(
+        ("height" = i64, Path, description = "Block height to retrieve")
+    ),
+    responses(
+        (status = 200, description = "Block retrieved successfully", body = StoredBlock),
+        (status = 404, description = "Block not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    )
+)]
 pub async fn get_block_by_height(
     State(pool): State<Pool<Postgres>>,
     Path(height): Path<i64>,

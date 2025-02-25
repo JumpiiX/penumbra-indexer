@@ -55,13 +55,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
             default
         });
 
-    let api_port = env::var("API_PORT")
+    let api_port = env::var("PORT")
+        .or_else(|_| env::var("API_PORT"))
         .unwrap_or_else(|_| {
-            println!("API_PORT not set, using default: 3000");
+            println!("Neither PORT nor API_PORT set, using default: 3000");
             "3000".to_string()
         })
         .parse::<u16>()
-        .expect("API_PORT must be a valid port number");
+        .expect("Port must be a valid port number");
+
+    println!("Configuration loaded successfully");
+    println!("API server will listen on port {}", api_port);
 
     let batch_size = env::var("BATCH_SIZE")
         .unwrap_or_else(|_| {

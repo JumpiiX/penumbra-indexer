@@ -51,3 +51,12 @@ pub fn not_found_error(message: impl Into<String>) -> (StatusCode, Json<ErrorRes
     };
     (StatusCode::NOT_FOUND, Json(error_response))
 }
+
+/*
+* Provides a simple health check endpoint for monitoring.
+*
+* @return JSON response with status "ok" when the service is healthy
+*/
+pub async fn health_check() -> impl axum::response::IntoResponse {
+    axum::Json(serde_json::json!({ "status": "ok" }))
+}

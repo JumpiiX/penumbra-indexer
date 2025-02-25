@@ -23,6 +23,7 @@ pub fn create_router(pool: Pool<Postgres>) -> Router {
         .route("/stats", get(routes::stats::get_chain_stats))
         .route("/transactions", get(routes::transactions::get_latest_transactions))
         .route("/blocks/:height/transactions", get(routes::transactions::get_transactions_by_block_height))
+        .route("/health", get(routes::common::health_check))  // Add this line
         .with_state(pool);
 
     Router::new()

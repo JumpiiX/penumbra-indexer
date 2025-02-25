@@ -52,7 +52,31 @@ impl RpcClient {
     */
     pub async fn get_block(&self, height: u64) -> Result<BlockResponse, Box<dyn Error + Send + Sync>> {
         let url = format!("{}/block?height={}", self.base_url, height);
-        let response = self.client.get(&url).send().await?.json().await?;
-        Ok(response)
+
+        let response = self.client.get(&url).send().await?;
+
+        // Check status code first
+        if !response.status().is_success() {
+            return Err(format!("HTTP error {} for block {}", response.status(), height).into());
+        }
+
+        // Get the response text
+        let text = response.text().await?;
+
+        // Try to parse as JSON
+        match serde_json::from_str::<BlockResponse>(&text) {
+            Ok(block) => Ok(block),
+            Err(e) => {
+                println!("Error parsing response for block {}: {}", height, e);
+                // Only print first 200 chars to avoid log spam
+                let preview = if text.len() > 200 {
+                    format!("{}...[truncated]", &text[..200])
+                } else {
+                    text.clone()
+                };
+                println!("Response preview: {}", preview);
+                Err(format!("Failed to parse JSON for block {}: {}", height, e).into())
+            }
+        }
     }
 }

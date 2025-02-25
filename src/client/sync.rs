@@ -69,6 +69,17 @@ impl PenumbraClient {
     * @param batch_size Number of blocks to fetch in each batch
     */
     pub async fn sync_from_genesis(&self, batch_size: u64) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // Check if initial sync should be skipped
+        let skip_initial_sync = std::env::var("SKIP_INITIAL_SYNC")
+            .unwrap_or_else(|_| "false".to_string())
+            .parse::<bool>()
+            .unwrap_or(false);
+
+        if skip_initial_sync {
+            println!("Skipping initial sync as configured by environment variable");
+            return Ok(());
+        }
+
         // Get the current blockchain height
         let status = self.get_status().await?;
         let chain_height: u64 = status.result.sync_info.latest_block_height
@@ -97,16 +108,15 @@ impl PenumbraClient {
             return Ok(());
         }
 
-        // Start from genesis (block 1) if database is empty
+        // Start from the known first valid block if database is empty
         let start_height = if db_height == 0 {
-            println!("Starting sync from genesis...");
-            1 // Genesis block (adjust if your chain starts at block 0)
+            println!("Starting sync from first known valid block (2611800)...");
+            2611800 // Known first valid block
         } else {
             println!("Continuing sync from last indexed block...");
             db_height + 1
         };
 
-        // Use existing fetch_blocks method with progress reporting
         println!("Fetching blocks from {} to {} (total: {} blocks)",
                  start_height, chain_height, chain_height - start_height + 1);
 
@@ -116,7 +126,6 @@ impl PenumbraClient {
         println!("Initial blockchain synchronization completed");
         Ok(())
     }
-
     /*
     * Fetches a range of blocks from the Penumbra blockchain.
     *
